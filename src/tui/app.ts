@@ -13,9 +13,10 @@ import { deleteRepositorySkill, importFromSource, listRepositorySkills } from ".
 import { scanAgentScope } from "../core/scanner.js";
 import { parseNpxSkillsAdd } from "../core/source-resolver.js";
 import type { Config, DeployMode, SkillScope } from "../core/types.js";
+import { getLogger } from "../platform/logger.js";
 import { displayPath, resolveUserPath } from "../platform/path.js";
 import { planAgentToggleChanges } from "./change-plan.js";
-import { prompts } from "./prompt-adapter.js";
+import { CancellationError, prompts } from "./prompt-adapter.js";
 
 export interface TuiOptions {
   homeDir?: string;
@@ -81,10 +82,10 @@ async function initializeFlow(options: Required<TuiOptions>) {
   );
   if (!shouldInit) {
     prompts.outro("已退出 skillctl。");
-    return process.exit(0);
+    throw new CancellationError();
   }
 
-  const defaultRepositoryPath = join(options.homeDir, ".skillctl", "repository");
+  const defaultRepositoryPath = join(options.homeDir, ".skillsctl", "repository");
   const repositoryInput = await prompts.text(
     "请选择本地技能仓库位置",
     defaultRepositoryPath,
@@ -304,23 +305,51 @@ async function agentsFlow(
   }
 
   const repositorySkills = await listRepositorySkills(config);
+  let enabled = 0;
+  let disabled = 0;
+  const errors: string[] = [];
+
   for (const item of toDisable) {
-    await disableSkill(config, item.deployment!);
+    try {
+      await disableSkill(config, item.deployment!);
+      disabled++;
+    } catch (err: any) {
+      const msg = formatDeployError(err, "禁用", item.name, item.targetPath ?? "");
+      errors.push(msg);
+    }
   }
   for (const item of toEnable) {
     const skill = repositorySkills.find((candidate) => candidate.id === item.skillId);
     if (skill) {
-      await enableSkill(config, skill, agent, scope, {
-        homeDir: options.homeDir,
-        platform: options.platform
-      });
+      try {
+        await enableSkill(config, skill, agent, scope, {
+          homeDir: options.homeDir,
+          platform: options.platform
+        });
+        enabled++;
+      } catch (err: any) {
+        const msg = formatDeployError(err, "启用", item.name, item.targetPath ?? "");
+        errors.push(msg);
+      }
     }
   }
 
-  prompts.note(
-    [`enabled: ${toEnable.length}`, `disabled: ${toDisable.length}`].join("\n"),
-    "批量变更完成"
-  );
+  if (errors.length > 0) {
+    prompts.note(
+      [
+        `成功: 启用 ${enabled}, 禁用 ${disabled}`,
+        "",
+        `失败 ${errors.length} 项:`,
+        ...errors
+      ].join("\n"),
+      "批量变更完成（部分失败）"
+    );
+  } else {
+    prompts.note(
+      [`enabled: ${enabled}`, `disabled: ${disabled}`].join("\n"),
+      "批量变更完成"
+    );
+  }
 }
 
 async function doctorFlow(config: Config, options: { homeDir: string }) {
@@ -403,4 +432,17 @@ async function settingsFlow(config: Config, options: { homeDir: string }) {
   await writeConfig(next);
   prompts.note(`${displayName} (${id})`, "已添加自定义 Agent");
   return next;
+}
+
+function formatDeployError(err: any, action: string, skillName: string, targetPath: string): string {
+  getLogger().error(`Deploy ${action} failed: ${skillName}`, err);
+
+  const code = err?.code as string | undefined;
+  if (code === "EBUSY" || code === "EPERM" || code === "EACCES") {
+    return `* ${skillName}: ${action}失败 — 目标被占用或无权限 (${targetPath})`;
+  }
+  if (code === "ENOSPC") {
+    return `* ${skillName}: ${action}失败 — 磁盘空间不足`;
+  }
+  return `* ${skillName}: ${action}失败 — ${err?.message ?? err}`;
 }

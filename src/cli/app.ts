@@ -9,7 +9,8 @@ import { disableSkill, enableSkill } from "../core/deployment.js";
 import { runQuickDoctor } from "../core/doctor.js";
 import { importFromSource, listRepositorySkills } from "../core/repository.js";
 import { scanAgentScope } from "../core/scanner.js";
-import type { Config, DeployMode, SkillManifest, SkillScope } from "../core/types.js";
+import type { Config, DeploymentRecord, DeployMode, SkillManifest, SkillScope } from "../core/types.js";
+import { getLogger } from "../platform/logger.js";
 import { displayPath, resolveUserPath } from "../platform/path.js";
 import { getFlag, getFlags, hasFlag, parseArgs } from "./args.js";
 
@@ -188,11 +189,16 @@ async function handleEnable(
   const scope = parseScope(flags, runtime);
   const skill = await findRepositorySkill(config, skillId);
   const mode = getFlag(flags, "mode") as DeployMode | undefined;
-  const deployment = await enableSkill(config, skill, agent, scope, {
-    homeDir: runtime.homeDir,
-    mode,
-    platform: runtime.platform
-  });
+  let deployment: DeploymentRecord;
+  try {
+    deployment = await enableSkill(config, skill, agent, scope, {
+      homeDir: runtime.homeDir,
+      mode,
+      platform: runtime.platform
+    });
+  } catch (err: any) {
+    return fail(formatDeployCliError(err, "enable", skillId));
+  }
 
   return ok(
     [
@@ -223,7 +229,11 @@ async function handleDisable(
     throw new Error(`Managed deployment not found for skill: ${skillId}`);
   }
 
-  await disableSkill(config, item.deployment);
+  try {
+    await disableSkill(config, item.deployment);
+  } catch (err: any) {
+    return fail(formatDeployCliError(err, "disable", skillId));
+  }
   return ok(`Disabled ${item.skillId}.\n`);
 }
 
@@ -331,6 +341,19 @@ function requireFlag(flags: Map<string, string[]>, name: string) {
   return value;
 }
 
+function formatDeployCliError(err: any, action: string, skillId: string): string {
+  getLogger().error(`Deploy ${action} failed: ${skillId}`, err);
+
+  const code = err?.code as string | undefined;
+  if (code === "EBUSY" || code === "EPERM" || code === "EACCES") {
+    return `Failed to ${action} ${skillId}: target is busy or access denied. Close any program using it and retry.`;
+  }
+  if (code === "ENOSPC") {
+    return `Failed to ${action} ${skillId}: no space left on device.`;
+  }
+  return `Failed to ${action} ${skillId}: ${err?.message ?? err}`;
+}
+
 function ok(stdout: string): CliResult {
   return { exitCode: 0, stdout, stderr: "" };
 }
@@ -338,6 +361,7 @@ function ok(stdout: string): CliResult {
 function fail(stderr: string): CliResult {
   return { exitCode: 1, stdout: "", stderr: `${stderr}\n` };
 }
+
 function isKnownCommand(command: string | undefined) {
   return ["repo", "import", "update", "enable", "disable", "app", "doctor", "config"].includes(
     command ?? ""
