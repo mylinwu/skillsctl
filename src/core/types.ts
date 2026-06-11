@@ -1,5 +1,13 @@
 export type DeployMode = "symlink" | "junction" | "copy" | "auto";
 
+export type LogLevel = "debug" | "info" | "warn" | "error" | "silent";
+
+export interface LoggingConfig {
+  level: LogLevel;
+  maxSizeMB: number;
+  maxFiles: number;
+}
+
 export type SkillScope =
   | { kind: "global" }
   | { kind: "project"; projectPath: string };
@@ -28,6 +36,7 @@ export interface Config {
   repositoryPath: string;
   deploymentsPath: string;
   defaultDeployMode: DeployMode;
+  logging: LoggingConfig;
   agents: AgentDefinition[];
 }
 

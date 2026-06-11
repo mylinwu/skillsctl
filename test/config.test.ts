@@ -11,15 +11,15 @@ import {
 import { makeTempWorkspace } from "./helpers/tmpdir.js";
 
 describe("config", () => {
-  it("builds macOS defaults under ~/.skillctl", () => {
+  it("builds macOS defaults under ~/.skillsctl", () => {
     const config = getDefaultConfig({
       homeDir: "/tmp/home",
       platform: "darwin"
     });
 
-    expect(config.configDir).toBe("/tmp/home/.skillctl");
-    expect(config.repositoryPath).toBe("/tmp/home/.skillctl/repository");
-    expect(config.deploymentsPath).toBe("/tmp/home/.skillctl/deployments.json");
+    expect(config.configDir).toBe("/tmp/home/.skillsctl");
+    expect(config.repositoryPath).toBe("/tmp/home/.skillsctl/repository");
+    expect(config.deploymentsPath).toBe("/tmp/home/.skillsctl/deployments.json");
     expect(config.defaultDeployMode).toBe("symlink");
     expect(config.agents.some((agent) => agent.id === "claude-code")).toBe(true);
     expect(config.agents.find((agent) => agent.id === "codex")?.globalPath).toBe("~/.codex/skills");
@@ -52,7 +52,29 @@ describe("config", () => {
     }
   });
 
+  it("includes logging config with defaults", async () => {
+    const workspace = await makeTempWorkspace();
+    try {
+      await mkdir(workspace.home, { recursive: true });
+      const config = await initializeConfig({
+        homeDir: workspace.home,
+        platform: "darwin"
+      });
+
+      expect(config.logging).toEqual({
+        level: "error",
+        maxSizeMB: 5,
+        maxFiles: 3
+      });
+
+      const persisted = await readConfig(workspace.home);
+      expect(persisted.logging.level).toBe("error");
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
   it("uses the documented config path", () => {
-    expect(getConfigPath("/Users/example")).toBe(join("/Users/example", ".skillctl", "config.json"));
+    expect(getConfigPath("/Users/example")).toBe(join("/Users/example", ".skillsctl", "config.json"));
   });
 });

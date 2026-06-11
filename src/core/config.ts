@@ -7,6 +7,14 @@ import type { Config, DeployMode, DeploymentRegistry } from "./types.js";
 
 const deployModeSchema = z.enum(["symlink", "junction", "copy", "auto"]);
 
+const logLevelSchema = z.enum(["debug", "info", "warn", "error", "silent"]);
+
+const loggingConfigSchema = z.object({
+  level: logLevelSchema,
+  maxSizeMB: z.number().positive(),
+  maxFiles: z.number().int().positive()
+});
+
 const agentSchema = z.object({
   id: z.string().min(1),
   displayName: z.string().min(1),
@@ -22,6 +30,7 @@ export const configSchema = z.object({
   repositoryPath: z.string().min(1),
   deploymentsPath: z.string().min(1),
   defaultDeployMode: deployModeSchema,
+  logging: loggingConfigSchema,
   agents: z.array(agentSchema)
 });
 
@@ -50,7 +59,7 @@ export interface ConfigPathsOptions {
 }
 
 export function getDefaultConfig(options: ConfigPathsOptions): Config {
-  const configDir = join(options.homeDir, ".skillctl");
+  const configDir = join(options.homeDir, ".skillsctl");
   const defaultDeployMode: DeployMode =
     (options.platform ?? process.platform) === "win32" ? "auto" : "symlink";
 
@@ -60,12 +69,17 @@ export function getDefaultConfig(options: ConfigPathsOptions): Config {
     repositoryPath: join(configDir, "repository"),
     deploymentsPath: join(configDir, "deployments.json"),
     defaultDeployMode,
+    logging: {
+      level: "error",
+      maxSizeMB: 5,
+      maxFiles: 3
+    },
     agents: getBuiltInAgents()
   };
 }
 
 export function getConfigPath(homeDir: string) {
-  return join(homeDir, ".skillctl", "config.json");
+  return join(homeDir, ".skillsctl", "config.json");
 }
 
 export async function configExists(homeDir: string) {
