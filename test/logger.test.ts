@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createLogger, resetLogger, getLogger } from "../src/platform/logger.js";
+import { initLogger, resetLogger, getLogger } from "../src/platform/logger.js";
 
 async function makeTmpDir() {
   return await mkdtemp(join(tmpdir(), "skillctl-log-"));
@@ -29,7 +29,7 @@ describe("logger", () => {
   });
 
   it("writes error logs to file", async () => {
-    const logger = createLogger({ logDir, level: "error", maxSizeMB: 5, maxFiles: 3 });
+    const logger = initLogger({ logDir, level: "error", maxSizeMB: 5, maxFiles: 3 });
     logger.error("test error");
 
     const content = await readFile(join(logDir, "skillctl.log"), "utf8");
@@ -38,7 +38,7 @@ describe("logger", () => {
   });
 
   it("respects log level filter", async () => {
-    const logger = createLogger({ logDir, level: "warn", maxSizeMB: 5, maxFiles: 3 });
+    const logger = initLogger({ logDir, level: "warn", maxSizeMB: 5, maxFiles: 3 });
     logger.debug("should not appear");
     logger.info("should not appear");
     logger.warn("should appear");
@@ -50,7 +50,7 @@ describe("logger", () => {
   });
 
   it("serializes Error data", async () => {
-    const logger = createLogger({ logDir, level: "error", maxSizeMB: 5, maxFiles: 3 });
+    const logger = initLogger({ logDir, level: "error", maxSizeMB: 5, maxFiles: 3 });
     logger.error("failed", new Error("EBUSY"));
 
     const content = await readFile(join(logDir, "skillctl.log"), "utf8");
@@ -58,7 +58,7 @@ describe("logger", () => {
   });
 
   it("serializes object data", async () => {
-    const logger = createLogger({ logDir, level: "info", maxSizeMB: 5, maxFiles: 3 });
+    const logger = initLogger({ logDir, level: "info", maxSizeMB: 5, maxFiles: 3 });
     logger.info("context", { target: "~/.agents/skills/brainstorming" });
 
     const content = await readFile(join(logDir, "skillctl.log"), "utf8");
@@ -66,7 +66,7 @@ describe("logger", () => {
   });
 
   it("rotates files when size exceeds limit", async () => {
-    const logger = createLogger({ logDir, level: "error", maxSizeMB: 0.001, maxFiles: 3 });
+    const logger = initLogger({ logDir, level: "error", maxSizeMB: 0.001, maxFiles: 3 });
 
     for (let i = 0; i < 100; i++) {
       logger.error(`message ${i}`.padEnd(200, "x"));

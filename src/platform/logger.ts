@@ -51,29 +51,24 @@ function shouldRotate(filePath: string, maxBytes: number): boolean {
 function rotateFiles(logDir: string, baseName: string, maxFiles: number) {
   const mainPath = join(logDir, baseName);
 
-  for (let i = maxFiles; i >= 1; i--) {
-    const current = i === 1 ? mainPath : join(logDir, `${baseName}.${i - 1}`);
+  for (let i = maxFiles; i >= 2; i--) {
+    const source = join(logDir, `${baseName}.${i - 1}`);
     const target = join(logDir, `${baseName}.${i}`);
 
-    if (existsSync(current)) {
-      if (i === maxFiles) {
-        try {
-          unlinkSync(current);
-        } catch {
-          /* ignore */
-        }
-      } else {
-        try {
-          renameSync(current, target);
-        } catch {
-          /* ignore */
-        }
-      }
+    if (existsSync(target)) {
+      try { unlinkSync(target); } catch { /* ignore */ }
     }
+    if (existsSync(source)) {
+      try { renameSync(source, target); } catch { /* ignore */ }
+    }
+  }
+
+  if (existsSync(mainPath)) {
+    try { renameSync(mainPath, join(logDir, `${baseName}.1`)); } catch { /* ignore */ }
   }
 }
 
-export function createLogger(options: LoggerOptions): Logger {
+export function initLogger(options: LoggerOptions): Logger {
   mkdirSync(options.logDir, { recursive: true });
 
   const levelNum = LOG_LEVELS[options.level];
