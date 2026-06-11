@@ -3,7 +3,7 @@
 本文档清点 skillctl 控制台管理工具的 MVP 功能状态。
 
 ## 本地 Skill 仓库 (P0)
-- [x] **仓库初始化**: 创建 `~/.skillctl/repository` 与配置文件 `~/.skillctl/config.json`。
+- [x] **仓库初始化**: 创建 `~/.skillsctl/repository` 与配置文件 `~/.skillsctl/config.json`。
 - [x] **仓库列表**: TUI & 核心支持列出仓库所有 skills，并展示名称、描述和来源。
 - [x] **本地路径导入**: 递归扫描 `SKILL.md`，解析 YAML frontmatter 并复制到仓库，记录来源元数据。
 - [x] **远程 Git 导入**: 支持 GitHub shorthand (`owner/repo`)、GitHub/GitLab/Git URL 并克隆导入。
@@ -37,7 +37,7 @@
 - [x] **系统设置视图**: 支持修改配置仓库路径、默认派发模式、启用/禁用 Agent、查看当前底层 JSON 状态。
 
 ## 远程更新支持 (P1)
-- [x] **来源追踪**: 导入的 skill 在 `.skillctl.json` 中保存 type、value、url、ref、subpath、skill、importedAt 等元数据。
+- [x] **来源追踪**: 导入的 skill 在 `.skillsctl.json` 中保存 type、value、url、ref、subpath、skill、importedAt 等元数据。
 - [x] **Copy 派发刷新 (过低优先级，MVP 仅保留核心指标)**: Doctor 可识别由 copy 模式派发的目录在仓库内容被修改（Hash 发生改变）时，将其标记为 `outdated` 并提示在 Doctor 视图中重新同步。
 - [ ] **远程拉取更新 (Unfinished)**: 从原始 Git / GitHub 重新 fetch 最新的 skills 分支，由于 MVP 策略偏安全，更新时发现本地修改只做跳过、覆盖和查看，该拉取更新命令接口在核心层已留空/待补充。
 
@@ -62,3 +62,9 @@
 
 ## 未来扩展 (P2)
 - [ ] **Profiles 技能组支持 (Unfinished)**: 在数据结构和元数据层面预留 Profiles 的模型扩展空间，MVP 阶段暂不做 UI 交互。
+
+## 日志系统 (Logging)
+- [x] **Logger 模块**: `src/platform/logger.ts` 导出单例 logger（`initLogger`、`getLogger`、`resetLogger`）。
+- [x] **配置集成**: `Config` 类型和 schema 新增 `logging` 字段（level、maxSizeMB、maxFiles），默认值 `error`/`5`/`3`。
+- [x] **集成钩子**: bin.ts 入口初始化 logger，TUI/CLI 错误捕获接入 logger。
+- [x] **日志文件管理**: 日志目录 `~/.skillsctl/logs/`，滚动轮转（5MB × 3 份）。
