@@ -30,7 +30,7 @@ export const configSchema = z.object({
   repositoryPath: z.string().min(1),
   deploymentsPath: z.string().min(1),
   defaultDeployMode: deployModeSchema,
-  logging: loggingConfigSchema,
+  logging: loggingConfigSchema.default({ level: "error", maxSizeMB: 5, maxFiles: 3 }),
   agents: z.array(agentSchema)
 });
 
