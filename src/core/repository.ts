@@ -12,8 +12,7 @@ import {
   parseSkillDirectory,
   skillMetadataPath
 } from "./skill-parser.js";
-import type { Config, SkillManifest, SkillSource } from "./types.js";
-import type { ParsedSource } from "./types.js";
+import type { Config, ParsedSource, SkillManifest, SkillSource } from "./types.js";
 import { parseSource } from "./source-resolver.js";
 
 export async function ensureRepository(config: Config) {

@@ -1,5 +1,5 @@
 import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, dirname, join, normalize, resolve, sep } from "node:path";
+import { basename, join, normalize, resolve, sep } from "node:path";
 import { parseDocument } from "yaml";
 import type { SkillManifest, SkillSource } from "./types.js";
 import { hashDirectory } from "../platform/hash.js";
@@ -97,11 +97,11 @@ export function parseFrontmatter(content: string): Record<string, unknown> {
 }
 
 export function skillMetadataPath(skillPath: string) {
-  return join(skillPath, ".skillctl.json");
+  return join(skillPath, ".skillsctl.json");
 }
 
 export function getSkillIdFromPath(skillPath: string) {
-  return basename(dirname(join(skillPath, "SKILL.md")));
+  return basename(skillPath);
 }
 
 export function isSubpathSafe(basePath: string, subpath: string) {

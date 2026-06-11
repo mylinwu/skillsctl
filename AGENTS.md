@@ -11,7 +11,7 @@
 
 ### 2. 测试驱动开发 (TDD)
 - 所有核心业务逻辑（`src/core` 下的 config、parser、repository、deployment、scanner、doctor、source-resolver）必须包含对应的单元测试，存放在 `test` 目录。
-- 文件系统测试严禁修改真实用户的 `~/.skillctl` 或真实系统的 Agent 目录，必须通过 `test/helpers/tmpdir.ts` 的 `makeTempWorkspace` 创建隔离临时目录。
+- 文件系统测试严禁修改真实用户的 `~/.skillsctl` 或真实系统的 Agent 目录，必须通过 `test/helpers/tmpdir.ts` 的 `makeTempWorkspace` 创建隔离临时目录。
 
 ### 3. TUI 与服务解耦
 - `@clack/prompts` 流程应当只在 `src/tui` 下维护，只负责：
@@ -31,7 +31,7 @@ src/
 ├── index.ts               # 导出 API 核心
 ├── core/
 │   ├── types.ts           # 核心数据模型与类型声明
-│   ├── config.ts          # ~/.skillctl 基础配置与 deployments 读写
+│   ├── config.ts          # ~/.skillsctl 基础配置与 deployments 读写
 │   ├── skill-parser.ts    # 解析 SKILL.md、isSubpathSafe 以及 discover 逻辑
 │   ├── source-resolver.ts # 解析 Git Shorthand/URL, 命令解析 (npx skills add)
 │   ├── git.ts             # git clone --depth 1 支持

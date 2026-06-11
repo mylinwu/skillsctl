@@ -1,5 +1,5 @@
 import { cp, lstat, mkdir, readlink, rm, symlink } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   exists,
@@ -128,7 +128,7 @@ async function assertTargetIsSafeToRemove(deployment: DeploymentRecord) {
     throw new Error(`Refusing to remove non-link managed target: ${deployment.targetPath}`);
   }
   const linkTarget = await readlink(deployment.targetPath);
-  if (linkTarget !== deployment.sourcePath) {
+  if (resolve(linkTarget) !== resolve(deployment.sourcePath)) {
     throw new Error(`Refusing to remove link with unexpected target: ${deployment.targetPath}`);
   }
 }

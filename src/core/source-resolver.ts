@@ -1,4 +1,4 @@
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, normalize, resolve } from "node:path";
 import type { ParsedSource } from "./types.js";
 export interface ParsedNpxSkillsAdd {
   source?: string;
@@ -139,7 +139,7 @@ export function parseSource(input: string, options: { cwd?: string } = {}): Pars
 }
 
 export function sanitizeSubpath(subpath: string) {
-  const normalized = subpath.replace(/\\/g, "/");
+  const normalized = normalize(subpath).replace(/\\/g, "/");
   for (const segment of normalized.split("/")) {
     if (segment === "..") {
       throw new Error(`Unsafe subpath: "${subpath}" contains path traversal segments.`);

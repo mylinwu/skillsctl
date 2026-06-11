@@ -2,6 +2,11 @@ import { join } from "node:path";
 import type { AgentDefinition, Config, SkillScope } from "./types.js";
 import { expandHome } from "../platform/path.js";
 
+function getCodexGlobalPath(): string {
+  const codeHome = process.env.CODEX_HOME?.trim();
+  return codeHome ? `${codeHome}/skills` : "~/.codex/skills";
+}
+
 export function getBuiltInAgents(): AgentDefinition[] {
   return [
     {
@@ -23,9 +28,7 @@ export function getBuiltInAgents(): AgentDefinition[] {
     {
       id: "codex",
       displayName: "Codex",
-      globalPath: process.env.CODEX_HOME?.trim()
-        ? `${process.env.CODEX_HOME.trim()}/skills`
-        : "~/.codex/skills",
+      globalPath: getCodexGlobalPath(),
       projectPath: ".agents/skills",
       defaultDeployMode: "inherit",
       enabled: true

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 
-const SKIP_FILES = new Set([".skillctl.json"]);
+const SKIP_FILES = new Set([".skillsctl.json"]);
 
 export async function hashDirectory(root: string) {
   const hash = createHash("sha256");
