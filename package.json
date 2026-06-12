@@ -1,10 +1,10 @@
 {
-  "name": "skillctl",
+  "name": "skillsctl",
   "version": "0.1.0",
   "description": "Local Agent Skills management TUI.",
   "type": "module",
   "bin": {
-    "skillctl": "./dist/bin.js"
+    "skillsctl": "./dist/bin.js"
   },
   "scripts": {
     "dev": "tsx src/bin.ts",

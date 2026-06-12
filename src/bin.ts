@@ -47,6 +47,6 @@ main().catch((error: unknown) => {
   }
   const message = error instanceof Error ? error.message : String(error);
   getLogger().error("Unhandled error", error);
-  console.error(`skillctl failed: ${message}`);
+  console.error(`skillsctl failed: ${message}`);
   process.exitCode = 1;
 });

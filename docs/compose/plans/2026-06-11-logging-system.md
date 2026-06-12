@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use compose:subagent (recommended) or compose:execute to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a file-based logging system with configurable levels and size-based rotation to skillctl
+**Goal:** Add a file-based logging system with configurable levels and size-based rotation to skillsctl
 
 **Architecture:** New `src/platform/logger.ts` module provides a singleton logger with synchronous file writes. Config schema extended with `logging` field. Error handling in TUI/CLI layers updated to log errors before displaying user messages.
 
@@ -44,7 +44,7 @@ import { tmpdir } from "node:os";
 import { createLogger, resetLogger, getLogger } from "../src/platform/logger.js";
 
 async function makeTmpDir() {
-  return await mkdtemp(join(tmpdir(), "skillctl-log-"));
+  return await mkdtemp(join(tmpdir(), "skillsctl-log-"));
 }
 
 describe("logger", () => {
@@ -71,7 +71,7 @@ describe("logger", () => {
     const logger = createLogger({ logDir, level: "error", maxSizeMB: 5, maxFiles: 3 });
     logger.error("test error");
 
-    const content = await readFile(join(logDir, "skillctl.log"), "utf8");
+    const content = await readFile(join(logDir, "skillsctl.log"), "utf8");
     expect(content).toContain("ERROR");
     expect(content).toContain("test error");
   });
@@ -83,7 +83,7 @@ describe("logger", () => {
     logger.warn("should appear");
     logger.error("should appear");
 
-    const content = await readFile(join(logDir, "skillctl.log"), "utf8");
+    const content = await readFile(join(logDir, "skillsctl.log"), "utf8");
     expect(content).not.toContain("should not appear");
     expect(content).toContain("should appear");
   });
@@ -92,7 +92,7 @@ describe("logger", () => {
     const logger = createLogger({ logDir, level: "error", maxSizeMB: 5, maxFiles: 3 });
     logger.error("failed", new Error("EBUSY"));
 
-    const content = await readFile(join(logDir, "skillctl.log"), "utf8");
+    const content = await readFile(join(logDir, "skillsctl.log"), "utf8");
     expect(content).toContain("EBUSY");
   });
 
@@ -105,7 +105,7 @@ describe("logger", () => {
 
     const files = await readdir(logDir);
     expect(files.length).toBeGreaterThan(1);
-    expect(files).toContain("skillctl.log");
+    expect(files).toContain("skillsctl.log");
   });
 });
 ```
@@ -191,7 +191,7 @@ export function createLogger(options: LoggerOptions): Logger {
 
   const levelNum = LOG_LEVELS[options.level];
   const maxBytes = options.maxSizeMB * 1024 * 1024;
-  const baseName = "skillctl.log";
+  const baseName = "skillsctl.log";
 
   function log(level: LogLevel, message: string, data?: unknown) {
     if (LOG_LEVELS[level] < levelNum) return;
@@ -463,7 +463,7 @@ main().catch((error: unknown) => {
   }
   const message = error instanceof Error ? error.message : String(error);
   getLogger().error("Unhandled error", error);
-  console.error(`skillctl failed: ${message}`);
+  console.error(`skillsctl failed: ${message}`);
   process.exitCode = 1;
 });
 ```

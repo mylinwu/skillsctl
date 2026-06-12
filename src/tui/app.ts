@@ -7,12 +7,29 @@ import {
   readConfig,
   writeConfig
 } from "../core/config.js";
-import { enableSkill, disableSkill } from "../core/deployment.js";
+import { enableSkill, disableSkill, scanBrokenDeployments, pruneBrokenDeployments } from "../core/deployment.js";
 import { runQuickDoctor } from "../core/doctor.js";
-import { deleteRepositorySkill, importFromSource, listRepositorySkills } from "../core/repository.js";
+import {
+  checkRepositorySkillUpdates,
+  deleteRepositorySkill,
+  importFromSource,
+  listRepositorySkills,
+  listRepositorySkillViews,
+  updateRepositorySkill
+} from "../core/repository.js";
 import { scanAgentScope } from "../core/scanner.js";
 import { parseNpxSkillsAdd } from "../core/source-resolver.js";
-import type { Config, DeployMode, SkillScope } from "../core/types.js";
+import type {
+  BrokenDeployment,
+  Config,
+  DeployMode,
+  RepositorySkillCheckResult,
+  RepositorySkillUpdateResult,
+  RepositorySkillView,
+  ScanItem,
+  SkillManifest,
+  SkillScope
+} from "../core/types.js";
 import { getLogger } from "../platform/logger.js";
 import { displayPath, resolveUserPath } from "../platform/path.js";
 import { planAgentToggleChanges } from "./change-plan.js";
@@ -31,7 +48,7 @@ export async function runTui(options: TuiOptions = {}) {
   const cwd = options.cwd ?? process.cwd();
   const platform = options.platform ?? process.platform;
 
-  prompts.intro("skillctl");
+  prompts.intro("skillsctl");
 
   let config: Config;
   if (!(await configExists(homeDir))) {
@@ -47,7 +64,7 @@ export async function runTui(options: TuiOptions = {}) {
     const action = await prompts.select<MainAction>(
       `本地仓库: ${displayPath(config.repositoryPath, { homeDir })}\n当前项目: ${cwd}\n\n请选择操作类别`,
       [
-        { value: "repository", label: "📦 仓库技能管理" },
+        { value: "repository", label: "📦 技能管理" },
         { value: "agents", label: "🤖 Agent 派发管理" },
         { value: "doctor", label: "🩺 系统环境诊断" },
         { value: "settings", label: "⚙️ 系统设置" },
@@ -78,16 +95,16 @@ export async function runTui(options: TuiOptions = {}) {
     }
   }
 
-  prompts.outro("已退出 skillctl。");
+  prompts.outro("已退出 skillsctl。");
 }
 
 async function initializeFlow(options: Required<TuiOptions>) {
   const shouldInit = await prompts.confirm(
-    "未检测到配置文件。skillctl 会创建一个不会被 Agent 自动读取的本地技能仓库。是否现在初始化？",
+    "未检测到配置文件。skillsctl 会创建一个不会被 Agent 自动读取的本地技能仓库。是否现在初始化？",
     true
   );
   if (isBack(shouldInit) || !shouldInit) {
-    prompts.outro("已退出 skillctl。");
+    prompts.outro("已退出 skillsctl。");
     return BACK;
   }
 
@@ -126,7 +143,7 @@ async function initializeFlow(options: Required<TuiOptions>) {
   if (isBack(enabledAgentIds)) return BACK;
 
   const spin = prompts.spinner();
-  spin.start("正在初始化 skillctl...");
+  spin.start("正在初始化 skillsctl...");
   const config = await initializeConfig({
     homeDir: options.homeDir,
     platform: options.platform,
@@ -149,12 +166,14 @@ async function initializeFlow(options: Required<TuiOptions>) {
 }
 
 async function repositoryFlow(config: Config, options: { homeDir: string; cwd: string }) {
-  const action = await prompts.select<"list" | "import-local" | "parse-npx" | "delete" | "back">(
-    "仓库技能管理",
+  const action = await prompts.select<"list" | "check-updates" | "import-local" | "parse-npx" | "scan-clean" | "delete" | "back">(
+    "技能管理",
     [
       { value: "list", label: "查看仓库 skills" },
+      { value: "check-updates", label: "检查技能更新" },
       { value: "import-local", label: "导入新 skill（本地路径 / GitHub / Git URL）" },
       { value: "parse-npx", label: "从 npx skills add 命令解析并导入" },
+      { value: "scan-clean", label: "扫描配置" },
       { value: "delete", label: "删除仓库 skill" },
       { value: "back", label: "返回主菜单" }
     ]
@@ -165,15 +184,12 @@ async function repositoryFlow(config: Config, options: { homeDir: string; cwd: s
   }
 
   if (action === "list") {
-    const skills = await listRepositorySkills(config);
-    prompts.note(
-      skills.length
-        ? skills
-            .map((skill) => `${skill.name} — ${skill.description || "无描述"}\n  ${displayPath(skill.localPath, options)}`)
-            .join("\n\n")
-        : "仓库中还没有 skills。",
-      "仓库 skills"
-    );
+    await browseRepositorySkills(config, options);
+    return;
+  }
+
+  if (action === "check-updates") {
+    await checkUpdatesFlow(config, options);
     return;
   }
 
@@ -225,6 +241,11 @@ async function repositoryFlow(config: Config, options: { homeDir: string; cwd: s
     return;
   }
 
+  if (action === "scan-clean") {
+    await scanCleanFlow(config, options);
+    return;
+  }
+
   const skills = await listRepositorySkills(config);
   if (skills.length === 0) {
     prompts.note("仓库中还没有 skills。", "无法删除");
@@ -240,6 +261,279 @@ async function repositoryFlow(config: Config, options: { homeDir: string; cwd: s
   if (confirmed) {
     await deleteRepositorySkill(config, skillId);
     prompts.note(skillId, "已删除");
+  }
+}
+
+async function scanCleanFlow(config: Config, options: { homeDir: string; cwd: string }) {
+  const spin = prompts.spinner();
+  spin.start("正在扫描派发记录...");
+  const broken = await scanBrokenDeployments(config);
+  spin.stop("扫描完成");
+
+  if (broken.length === 0) {
+    prompts.note("所有派发记录均正常，无需清理。", "扫描结果");
+    return;
+  }
+
+  const reasonLabels: Record<string, string> = {
+    "target-missing": "目标已删除",
+    "broken-link": "链接已损坏"
+  };
+
+  const lines = broken.map((item) => {
+    const d = item.deployment;
+    const type = item.isLink ? "link" : d.mode;
+    const reason = reasonLabels[item.reason] ?? item.reason;
+    return `• ${d.skillId} [${d.agentId}/${d.scope}] ${reason} (${type})\n  ${displayPath(d.targetPath, options)}`;
+  });
+
+  prompts.note(
+    [`发现 ${broken.length} 条失效派发记录：`, "", ...lines].join("\n"),
+    "扫描结果"
+  );
+
+  const confirmed = await prompts.confirm("是否清理这些失效记录？", true);
+  if (isBack(confirmed) || !confirmed) return;
+
+  const result = await pruneBrokenDeployments(config, broken);
+  prompts.note(
+    [
+      `已移除 ${result.pruned} 条派发记录`,
+      result.cleanedLinks > 0 ? `已清理 ${result.cleanedLinks} 个残留链接文件` : ""
+    ].filter(Boolean).join("\n"),
+    "清理完成"
+  );
+}
+
+async function checkUpdatesFlow(config: Config, options: { homeDir: string; cwd: string }) {
+  const spin = prompts.spinner();
+  spin.start("正在检查所有技能的更新情况...");
+  const results = await checkRepositorySkillUpdates(config);
+  spin.stop("检查完成");
+
+  const updatable = results.filter((item) => item.status === "update-available");
+  const blocked = results.filter((item) => item.status !== "update-available" && item.status !== "already-latest");
+
+  if (updatable.length === 0) {
+    const lines = blocked.length
+      ? blocked.map((item) => `* ${item.skillId}: ${formatCheckStatus(item)}`)
+      : ["所有技能都已经是最新版本。"];
+    prompts.note(lines.join("\n"), "检查结果");
+    return;
+  }
+
+  if (blocked.length > 0) {
+    prompts.note(
+      blocked.map((item) => `* ${item.skillId}: ${formatCheckStatus(item)}`).join("\n"),
+      "以下技能未纳入本次更新"
+    );
+  }
+
+  const selected = await prompts.multiselect(
+    "发现以下技能有更新，默认全选。请选择要更新的技能",
+    updatable.map((item) => ({
+      value: item.skillId,
+      label: item.name,
+      hint: formatCheckStatus(item)
+    })),
+    false,
+    updatable.map((item) => item.skillId)
+  );
+  if (isBack(selected) || selected.length === 0) {
+    return;
+  }
+
+  const confirmed = await prompts.confirm(`确认批量更新 ${selected.length} 个技能？`, true);
+  if (isBack(confirmed) || !confirmed) {
+    return;
+  }
+
+  const updateSpin = prompts.spinner();
+  updateSpin.start("正在批量更新技能...");
+  const updated = await Promise.all(selected.map((skillId) => updateRepositorySkill(config, skillId)));
+  updateSpin.stop("批量更新完成");
+
+  prompts.note(updated.map((item) => `* ${item.skillId}: ${formatUpdateResult(item, options)}`).join("\n"), "更新结果");
+}
+
+async function browseRepositorySkills(config: Config, options: { homeDir: string; cwd: string }) {
+  while (true) {
+    const keyword = await prompts.text("输入关键词过滤 skills，直接 Enter 查看全部", "");
+    if (isBack(keyword)) return;
+
+    const views = await listRepositorySkillViews(config, { keyword });
+    if (views.length === 0) {
+      prompts.note("没有匹配的 skills。", "仓库 skills");
+      continue;
+    }
+
+    const skillId = await prompts.select<string | "back">(
+      "请选择一个 skill 查看详情",
+      [
+        ...views.map((view) => ({
+          value: view.skill.id,
+          label: view.skill.name,
+          hint: view.summary
+        })),
+        { value: "back", label: "返回上一级", hint: "返回仓库管理" }
+      ]
+    );
+    if (isBack(skillId) || skillId === "back") {
+      return;
+    }
+
+    const selected = views.find((view) => view.skill.id === skillId);
+    if (!selected) {
+      continue;
+    }
+    await showRepositorySkillDetail(config, selected, options);
+  }
+}
+
+async function showRepositorySkillDetail(
+  config: Config,
+  initialView: RepositorySkillView,
+  options: { homeDir: string; cwd: string }
+) {
+  let current = initialView;
+
+  while (true) {
+    prompts.note(formatRepositorySkillDetail(current, options), current.skill.name);
+
+    const action = await prompts.select<"enable" | "update" | "delete" | "back">(
+      "请选择操作",
+      [
+        { value: "enable", label: "启用到 Agent" },
+        { value: "update", label: "更新此 skill" },
+        { value: "delete", label: "删除此 skill" },
+        { value: "back", label: "返回仓库列表" }
+      ]
+    );
+    if (isBack(action) || action === "back") {
+      return;
+    }
+
+    if (action === "enable") {
+      await enableRepositorySkillFromDetail(config, current.skill, options);
+    } else if (action === "update") {
+      await updateRepositorySkillFromDetail(config, current.skill, options);
+    } else if (action === "delete") {
+      const deleted = await deleteRepositorySkillFromDetail(config, current.skill.id);
+      if (deleted) {
+        return;
+      }
+    }
+
+    const refreshed = await listRepositorySkillViews(config);
+    const nextView = refreshed.find((view) => view.skill.id === current.skill.id);
+    if (!nextView) {
+      return;
+    }
+    current = nextView;
+  }
+}
+
+async function enableRepositorySkillFromDetail(
+  config: Config,
+  skill: SkillManifest,
+  options: { homeDir: string; cwd: string }
+) {
+  const agents = config.agents.filter((agent) => agent.enabled);
+  if (agents.length === 0) {
+    prompts.note("没有启用的 Agent，请先到系统设置启用。", "无法启用");
+    return;
+  }
+
+  const agentId = await prompts.select(
+    "请选择目标 Agent",
+    agents.map((agent) => ({
+      value: agent.id,
+      label: agent.displayName,
+      hint: displayPath(resolveAgentTargetPath(agent, { kind: "global" }, options), options)
+    }))
+  );
+  if (isBack(agentId)) return;
+
+  const agent = getAgent(config, agentId)!;
+  const scopeChoice = await prompts.select<"global" | "project">(
+    "请选择启用范围",
+    [
+      {
+        value: "global",
+        label: `全局: ${displayPath(resolveAgentTargetPath(agent, { kind: "global" }, options), options)}`
+      },
+      {
+        value: "project",
+        label: `当前项目: ${resolveAgentTargetPath(agent, { kind: "project", projectPath: options.cwd }, options)}`
+      }
+    ]
+  );
+  if (isBack(scopeChoice)) return;
+
+  const scope: SkillScope =
+    scopeChoice === "global" ? { kind: "global" } : { kind: "project", projectPath: options.cwd };
+
+  try {
+    const deployment = await enableSkill(config, skill, agent, scope, {
+      homeDir: options.homeDir,
+      platform: process.platform
+    });
+    prompts.note(
+      [
+        `Agent: ${agent.displayName}`,
+        `范围: ${deployment.scope}`,
+        `目标: ${displayPath(deployment.targetPath, options)}`,
+        `模式: ${deployment.mode}`
+      ].join("\n"),
+      "启用完成"
+    );
+  } catch (err: any) {
+    prompts.note(formatDeployError(err, "启用", skill.name, skill.localPath), "启用失败");
+  }
+}
+
+async function updateRepositorySkillFromDetail(
+  config: Config,
+  skill: SkillManifest,
+  options: { homeDir: string; cwd: string }
+) {
+  let result = await updateRepositorySkill(config, skill.id);
+  if (result.status === "skipped-local-changes") {
+    const choice = await prompts.select<"skip" | "force" | "view">(
+      `${skill.name} 存在本地修改，请选择处理方式`,
+      [
+        { value: "skip", label: "跳过，保留本地修改" },
+        { value: "force", label: "强制覆盖" },
+        { value: "view", label: "查看路径" }
+      ]
+    );
+    if (isBack(choice) || choice === "skip") {
+      prompts.note(formatUpdateResult(result, options), "更新结果");
+      return;
+    }
+    if (choice === "view") {
+      prompts.note(displayPath(skill.localPath, options), "本地路径");
+      return;
+    }
+    result = await updateRepositorySkill(config, skill.id, { force: true });
+  }
+
+  prompts.note(formatUpdateResult(result, options), "更新结果");
+}
+
+async function deleteRepositorySkillFromDetail(config: Config, skillId: string) {
+  const confirmed = await prompts.confirm("确认删除？已派发的 skill 会被阻止删除。", false);
+  if (isBack(confirmed) || !confirmed) {
+    return false;
+  }
+
+  try {
+    await deleteRepositorySkill(config, skillId);
+    prompts.note(skillId, "已删除");
+    return true;
+  } catch (err: any) {
+    prompts.note(err?.message ?? String(err), "删除失败");
+    return false;
   }
 }
 
@@ -285,9 +579,18 @@ async function agentsFlow(
   const scope: SkillScope =
     scopeChoice === "global" ? { kind: "global" } : { kind: "project", projectPath: options.cwd };
   const items = await scanAgentScope(config, agentId, scope, { homeDir: options.homeDir });
-  const manageable = items.filter((item) => ["managed", "outdated", "not-deployed"].includes(item.status));
+  const manageable = items.filter((item) => ["managed", "outdated", "not-deployed", "broken"].includes(item.status));
+  const unmanageable = items.filter((item) => ["local-only", "conflict"].includes(item.status));
+
+  // 展示不可操作项的分组信息
+  if (unmanageable.length > 0) {
+    displayUnmanageableItems(unmanageable);
+  }
+
   if (manageable.length === 0) {
-    prompts.note("仓库中还没有可管理的 skills，或当前只有 local-only/conflict/broken 项。", "无可管理项");
+    if (unmanageable.length === 0) {
+      prompts.note("仓库中还没有可管理的 skills。", "无可管理项");
+    }
     return;
   }
 
@@ -316,7 +619,7 @@ async function agentsFlow(
       `将关闭 ${toDisable.length} 个 skill:`,
       ...toDisable.map((item) => `* ${item.name} 删除 ${item.targetPath}`),
       "",
-      "不会自动处理 local-only、broken、conflict 项。"
+      "不会自动处理 local-only、conflict 项。"
     ].join("\n"),
     "变更预览"
   );
@@ -461,6 +764,32 @@ async function settingsFlow(config: Config, options: { homeDir: string }) {
   return next;
 }
 
+function displayUnmanageableItems(items: ScanItem[]) {
+  const groups: Record<string, ScanItem[]> = {};
+  for (const item of items) {
+    const key = item.status;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(item);
+  }
+
+  const statusLabels: Record<string, string> = {
+    "local-only": "仅本地（不在仓库中）",
+    conflict: "冲突（目标存在但未由 skillsctl 管理）"
+  };
+
+  const lines: string[] = [];
+  for (const [status, group] of Object.entries(groups)) {
+    lines.push(`[${statusLabels[status] ?? status}] (${group.length})`);
+    for (const item of group) {
+      const detail = item.message ? ` — ${item.message}` : "";
+      lines.push(`  • ${item.name}${detail}`);
+    }
+    lines.push("");
+  }
+
+  prompts.note(lines.join("\n").trimEnd(), "以下技能不可操作");
+}
+
 function formatDeployError(err: any, action: string, skillName: string, targetPath: string): string {
   getLogger().error(`Deploy ${action} failed: ${skillName}`, err);
 
@@ -472,4 +801,69 @@ function formatDeployError(err: any, action: string, skillName: string, targetPa
     return `* ${skillName}: ${action}失败 — 磁盘空间不足`;
   }
   return `* ${skillName}: ${action}失败 — ${err?.message ?? err}`;
+}
+
+function formatRepositorySkillDetail(
+  view: RepositorySkillView,
+  options: { homeDir: string; cwd: string }
+) {
+  const deployments = view.deployments.length
+    ? view.deployments
+        .map((item) => {
+          const target = displayPath(item.deployment.targetPath, options);
+          return `* ${item.deployment.agentId} ${item.deployment.scope}: ${target}  ${item.status} ${item.deployment.mode}`;
+        })
+        .join("\n")
+    : "not deployed";
+
+  return [
+    "描述:",
+    view.skill.description || "无描述",
+    "",
+    "来源:",
+    view.skill.source?.value ?? "unknown",
+    "",
+    "本地路径:",
+    displayPath(view.skill.localPath, options),
+    "",
+    "当前派发:",
+    deployments
+  ].join("\n");
+}
+
+function formatUpdateResult(
+  result: RepositorySkillUpdateResult,
+  options: { homeDir: string; cwd: string }
+) {
+  switch (result.status) {
+    case "updated":
+      return `${result.skillId}: updated`;
+    case "already-latest":
+      return `${result.skillId}: already latest`;
+    case "skipped-local-changes":
+      return `${result.skillId}: skipped, local changes detected`;
+    case "unsupported-source":
+      return `${result.skillId}: unsupported source`;
+    case "missing-upstream-skill":
+      return `${result.skillId}: failed, upstream skill missing`;
+    case "failed":
+      return `${result.skillId}: failed, ${result.message ?? "unknown error"}\n${displayPath(result.localPath, options)}`;
+  }
+}
+
+function formatCheckStatus(result: RepositorySkillCheckResult) {
+  switch (result.status) {
+    case "update-available":
+      return "有可用更新";
+    case "already-latest":
+      return "已是最新";
+    case "local-changes":
+      return "存在本地修改";
+    case "unsupported-source":
+      return "缺少可更新来源";
+    case "missing-upstream-skill":
+      return "上游技能已不存在";
+    case "failed":
+      return result.message ? `检查失败 - ${result.message}` : "检查失败";
+  }
 }

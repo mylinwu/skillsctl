@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本文档为开发 skillctl 应用的 AI Agent 提供核心规则与架构指导。
+本文档为开发 skillsctl 应用的 AI Agent 提供核心规则与架构指导。
 
 ## 核心开发规则（硬性门槛）
 

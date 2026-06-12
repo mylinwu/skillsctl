@@ -2,7 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getAgent } from "../src/core/agent-registry.js";
 import { getDefaultConfig, readDeploymentRegistry, writeDeploymentRegistry } from "../src/core/config.js";
-import { disableSkill, enableSkill, resolveDeployMode } from "../src/core/deployment.js";
+import { disableSkill, enableSkill, resolveDeployMode, scanBrokenDeployments, pruneBrokenDeployments } from "../src/core/deployment.js";
 import { runQuickDoctor } from "../src/core/doctor.js";
 import { importLocalSkills } from "../src/core/repository.js";
 import { scanAgentScope } from "../src/core/scanner.js";
@@ -24,8 +24,8 @@ describe("deployment, scanner, and doctor", () => {
 
       const deployment = await enableSkill(config, skill!, agent!, { kind: "global" }, {
         homeDir: workspace.home,
-        mode: "symlink",
-        platform: "darwin"
+        mode: process.platform === "win32" ? "junction" : "symlink",
+        platform: process.platform === "win32" ? "win32" : "darwin"
       });
       expect((await readDeploymentRegistry(config.deploymentsPath)).deployments).toHaveLength(1);
 
@@ -39,8 +39,8 @@ describe("deployment, scanner, and doctor", () => {
       await mkdir(join(targetRoot, "frontend-design"), { recursive: true });
       await expect(enableSkill(config, skill!, agent!, { kind: "global" }, {
         homeDir: workspace.home,
-        mode: "symlink",
-        platform: "darwin"
+        mode: process.platform === "win32" ? "junction" : "symlink",
+        platform: process.platform === "win32" ? "win32" : "darwin"
       })).rejects.toThrow("not managed");
     } finally {
       await workspace.cleanup();
@@ -66,7 +66,7 @@ describe("deployment, scanner, and doctor", () => {
       const deployment = await enableSkill(config, skill!, agent, { kind: "global" }, {
         homeDir: workspace.home,
         mode: "copy",
-        platform: "darwin"
+        platform: process.platform === "win32" ? "win32" : "darwin"
       });
       await writeFile(join(skill!.localPath, "extra.txt"), "changed");
       const outdatedScan = await scanAgentScope(config, agent.id, { kind: "global" }, { homeDir: workspace.home });
@@ -105,6 +105,67 @@ describe("deployment, scanner, and doctor", () => {
           updatedAt: new Date().toISOString()
         })
       ).rejects.toThrow("not managed");
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
+  it("scans and prunes broken deployment records", async () => {
+    const workspace = await makeTempWorkspace();
+    try {
+      const config = getDefaultConfig({ homeDir: workspace.home, platform: "darwin" });
+      const [skill] = await importLocalSkills(config, join(import.meta.dirname, "fixtures", "skills", "frontend-design"));
+      const agent = getAgent(config, "claude-code")!;
+
+      // Create a copy deployment then remove the target
+      const copyDeployment = await enableSkill(config, skill!, agent, { kind: "global" }, {
+        homeDir: workspace.home,
+        mode: "copy",
+        platform: process.platform === "win32" ? "win32" : "darwin"
+      });
+      await rm(copyDeployment.targetPath, { recursive: true, force: true });
+
+      // Manually add a second record pointing to a non-existent target
+      const registry = await readDeploymentRegistry(config.deploymentsPath);
+      registry.deployments.push({
+        ...copyDeployment,
+        id: "fake-broken-record",
+        agentId: "codex",
+        targetPath: join(workspace.home, ".codex", "skills", "frontend-design")
+      });
+      await writeDeploymentRegistry(config.deploymentsPath, registry);
+
+      // Both should be detected as broken
+      const broken = await scanBrokenDeployments(config);
+      expect(broken).toHaveLength(2);
+      expect(broken.every((item) => item.reason === "target-missing")).toBe(true);
+
+      // Prune should remove both records
+      const result = await pruneBrokenDeployments(config, broken);
+      expect(result.pruned).toBe(2);
+
+      const cleaned = await readDeploymentRegistry(config.deploymentsPath);
+      expect(cleaned.deployments).toHaveLength(0);
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
+  it("reports no broken deployments when all targets exist", async () => {
+    const workspace = await makeTempWorkspace();
+    try {
+      const config = getDefaultConfig({ homeDir: workspace.home, platform: "darwin" });
+      const [skill] = await importLocalSkills(config, join(import.meta.dirname, "fixtures", "skills", "frontend-design"));
+      const agent = getAgent(config, "claude-code")!;
+
+      await enableSkill(config, skill!, agent, { kind: "global" }, {
+        homeDir: workspace.home,
+        mode: "copy",
+        platform: process.platform === "win32" ? "win32" : "darwin"
+      });
+
+      const broken = await scanBrokenDeployments(config);
+      expect(broken).toHaveLength(0);
     } finally {
       await workspace.cleanup();
     }

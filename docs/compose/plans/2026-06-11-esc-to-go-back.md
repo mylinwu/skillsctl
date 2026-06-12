@@ -391,7 +391,7 @@ Run: `pnpm dev`
 Verify:
 
 1. At main menu, press ESC → app exits cleanly
-2. Enter "仓库技能管理", press ESC → returns to main menu
+2. Enter "技能管理", press ESC → returns to main menu
 3. Enter "系统设置", press ESC → returns to main menu
 4. At any prompt, press Ctrl+C → app exits immediately
 5. Navigate through sub-menus normally with Enter → works as before

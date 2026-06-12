@@ -58,6 +58,7 @@ export interface SkillSource {
   ref?: string;
   subpath?: string;
   importedAt?: string;
+  sourceHash?: string;
 }
 
 export interface ParsedSource {
@@ -111,4 +112,51 @@ export interface DoctorIssue {
   message: string;
   path?: string;
   fixable: boolean;
+}
+
+export interface BrokenDeployment {
+  deployment: DeploymentRecord;
+  reason: "target-missing" | "broken-link";
+  isLink: boolean;
+}
+
+export interface RepositorySkillDeploymentSummary {
+  deployment: DeploymentRecord;
+  status: "managed" | "outdated";
+}
+
+export interface RepositorySkillView {
+  skill: SkillManifest;
+  deployments: RepositorySkillDeploymentSummary[];
+  summary: string;
+}
+
+export type RepositorySkillUpdateStatus =
+  | "updated"
+  | "already-latest"
+  | "skipped-local-changes"
+  | "unsupported-source"
+  | "missing-upstream-skill"
+  | "failed";
+
+export interface RepositorySkillUpdateResult {
+  skillId: string;
+  name: string;
+  localPath: string;
+  status: RepositorySkillUpdateStatus;
+  message?: string;
+}
+
+export interface RepositorySkillCheckResult {
+  skillId: string;
+  name: string;
+  localPath: string;
+  status:
+    | "update-available"
+    | "already-latest"
+    | "local-changes"
+    | "unsupported-source"
+    | "missing-upstream-skill"
+    | "failed";
+  message?: string;
 }

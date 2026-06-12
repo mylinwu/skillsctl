@@ -7,7 +7,11 @@ import {
 } from "../core/config.js";
 import { disableSkill, enableSkill } from "../core/deployment.js";
 import { runQuickDoctor } from "../core/doctor.js";
-import { importFromSource, listRepositorySkills } from "../core/repository.js";
+import {
+  importFromSource,
+  listRepositorySkills,
+  updateRepositorySkills
+} from "../core/repository.js";
 import { scanAgentScope } from "../core/scanner.js";
 import type { Config, DeploymentRecord, DeployMode, SkillManifest, SkillScope } from "../core/types.js";
 import { getLogger } from "../platform/logger.js";
@@ -55,7 +59,7 @@ export async function runCli(options: CliOptions): Promise<CliResult> {
     }
 
     if (!(await configExists(runtime.homeDir))) {
-      return fail("Config not found. Run `skillctl init` first.");
+      return fail("Config not found. Run `skillsctl init` first.");
     }
 
     const config = await readConfig(runtime.homeDir);
@@ -68,9 +72,7 @@ export async function runCli(options: CliOptions): Promise<CliResult> {
       case "import":
         return await handleImport(config, parsed.command.slice(1), parsed.flags, runtime);
       case "update":
-        return fail(
-          `skillctl update${subcommand ? ` ${subcommand}` : ""} is not implemented yet.`
-        );
+        return await handleUpdate(config, subcommand);
       case "enable":
         return await handleEnable(config, subcommand, parsed.flags, runtime);
       case "disable":
@@ -116,7 +118,7 @@ async function handleInit(flags: Map<string, string[]>, runtime: Runtime) {
 
   return ok(
     [
-      "Initialized skillctl.",
+      "Initialized skillsctl.",
       `Config: ${displayPath(`${config.configDir}/config.json`, runtime)}`,
       `Repository: ${displayPath(config.repositoryPath, runtime)}`,
       `Deployments: ${displayPath(config.deploymentsPath, runtime)}`
@@ -306,6 +308,41 @@ async function handleDoctor(config: Config, runtime: Runtime) {
   );
 }
 
+async function handleUpdate(config: Config, skillId: string | undefined) {
+  const results = await updateRepositorySkills(config, {
+    skillIds: skillId ? [skillId] : undefined
+  });
+
+  if (skillId && results.length === 0) {
+    return fail(`Skill not found: ${skillId}`);
+  }
+
+  if (results.length === 0) {
+    return ok("No skills in repository.\n");
+  }
+
+  return ok(
+    results
+      .map((result) => {
+        switch (result.status) {
+          case "updated":
+            return `${result.skillId}: updated`;
+          case "already-latest":
+            return `${result.skillId}: already latest`;
+          case "skipped-local-changes":
+            return `${result.skillId}: skipped, local changes detected`;
+          case "unsupported-source":
+            return `${result.skillId}: unsupported source`;
+          case "missing-upstream-skill":
+            return `${result.skillId}: failed, upstream skill missing`;
+          case "failed":
+            return `${result.skillId}: failed, ${result.message ?? "unknown error"}`;
+        }
+      })
+      .join("\n") + "\n"
+  );
+}
+
 async function findRepositorySkill(config: Config, skillId: string): Promise<SkillManifest> {
   const skills = await listRepositorySkills(config);
   const skill = skills.find((candidate) => candidate.id === skillId || candidate.name === skillId);
@@ -370,18 +407,18 @@ function isKnownCommand(command: string | undefined) {
 
 function helpText() {
   return [
-    "skillctl",
+    "skillsctl",
     "",
     "Commands:",
-    "  skillctl init [--repository <path>] [--mode <symlink|junction|copy|auto>] [--agents <ids>]",
-    "  skillctl repo list",
-    "  skillctl import <source> [--skill <id>]",
-    "  skillctl update [skill]",
-    "  skillctl enable <skill> --agent <agent> (--global | --project <path>) [--mode <mode>]",
-    "  skillctl disable <skill> --agent <agent> (--global | --project <path>)",
-    "  skillctl app list",
-    "  skillctl app <agent> list [--global | --project <path>]",
-    "  skillctl doctor",
-    "  skillctl config"
+    "  skillsctl init [--repository <path>] [--mode <symlink|junction|copy|auto>] [--agents <ids>]",
+    "  skillsctl repo list",
+    "  skillsctl import <source> [--skill <id>]",
+    "  skillsctl update [skill]",
+    "  skillsctl enable <skill> --agent <agent> (--global | --project <path>) [--mode <mode>]",
+    "  skillsctl disable <skill> --agent <agent> (--global | --project <path>)",
+    "  skillsctl app list",
+    "  skillsctl app <agent> list [--global | --project <path>]",
+    "  skillsctl doctor",
+    "  skillsctl config"
   ].join("\n") + "\n";
 }

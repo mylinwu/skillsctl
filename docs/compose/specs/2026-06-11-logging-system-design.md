@@ -2,11 +2,11 @@
 
 ## [S1] Problem
 
-skillctl 在运行时遇到的错误（如 EBUSY、EPERM）直接抛出或打印到 stderr 后程序退出，无法事后排查。需要一个日志系统将错误持久化到文件，支持级别配置和滚动轮转。
+skillsctl 在运行时遇到的错误（如 EBUSY、EPERM）直接抛出或打印到 stderr 后程序退出，无法事后排查。需要一个日志系统将错误持久化到文件，支持级别配置和滚动轮转。
 
 ## [S2] Requirements
 
-- 日志写入 `~/.skillsctl/logs/skillctl.log`
+- 日志写入 `~/.skillsctl/logs/skillsctl.log`
 - 默认级别 `error`，可通过 `config.json` 的 `logging.level` 配置
 - 支持级别：`debug` | `info` | `warn` | `error` | `silent`
 - 单文件最大 5MB，保留最近 3 个旧文件（共 ~20MB）
@@ -71,10 +71,10 @@ function getLogger(): Logger;
 
 写入前检查当前文件大小，若写入后会超过 `maxSizeMB`：
 
-1. 删除最旧文件 `skillctl.log.{maxFiles}`
+1. 删除最旧文件 `skillsctl.log.{maxFiles}`
 2. 重命名 `{n}` → `{n+1}`，从最旧开始
-3. 当前文件 → `skillctl.log.1`
-4. 创建新的 `skillctl.log`
+3. 当前文件 → `skillsctl.log.1`
+4. 创建新的 `skillsctl.log`
 
 ## [S7] Integration Points
 

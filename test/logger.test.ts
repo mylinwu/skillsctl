@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { initLogger, resetLogger, getLogger } from "../src/platform/logger.js";
 
 async function makeTmpDir() {
-  return await mkdtemp(join(tmpdir(), "skillctl-log-"));
+  return await mkdtemp(join(tmpdir(), "skillsctl-log-"));
 }
 
 describe("logger", () => {
@@ -32,7 +32,7 @@ describe("logger", () => {
     const logger = initLogger({ logDir, level: "error", maxSizeMB: 5, maxFiles: 3 });
     logger.error("test error");
 
-    const content = await readFile(join(logDir, "skillctl.log"), "utf8");
+    const content = await readFile(join(logDir, "skillsctl.log"), "utf8");
     expect(content).toContain("ERROR");
     expect(content).toContain("test error");
   });
@@ -44,7 +44,7 @@ describe("logger", () => {
     logger.warn("should appear");
     logger.error("should appear");
 
-    const content = await readFile(join(logDir, "skillctl.log"), "utf8");
+    const content = await readFile(join(logDir, "skillsctl.log"), "utf8");
     expect(content).not.toContain("should not appear");
     expect(content).toContain("should appear");
   });
@@ -53,7 +53,7 @@ describe("logger", () => {
     const logger = initLogger({ logDir, level: "error", maxSizeMB: 5, maxFiles: 3 });
     logger.error("failed", new Error("EBUSY"));
 
-    const content = await readFile(join(logDir, "skillctl.log"), "utf8");
+    const content = await readFile(join(logDir, "skillsctl.log"), "utf8");
     expect(content).toContain("EBUSY");
   });
 
@@ -61,7 +61,7 @@ describe("logger", () => {
     const logger = initLogger({ logDir, level: "info", maxSizeMB: 5, maxFiles: 3 });
     logger.info("context", { target: "~/.agents/skills/brainstorming" });
 
-    const content = await readFile(join(logDir, "skillctl.log"), "utf8");
+    const content = await readFile(join(logDir, "skillsctl.log"), "utf8");
     expect(content).toContain("brainstorming");
   });
 
@@ -74,6 +74,6 @@ describe("logger", () => {
 
     const files = await readdir(logDir);
     expect(files.length).toBeGreaterThan(1);
-    expect(files).toContain("skillctl.log");
+    expect(files).toContain("skillsctl.log");
   });
 });

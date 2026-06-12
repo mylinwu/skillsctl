@@ -73,7 +73,7 @@ export function initLogger(options: LoggerOptions): Logger {
 
   const levelNum = LOG_LEVELS[options.level];
   const maxBytes = options.maxSizeMB * 1024 * 1024;
-  const baseName = "skillctl.log";
+  const baseName = "skillsctl.log";
 
   function log(level: LogLevel, message: string, data?: unknown) {
     if (LOG_LEVELS[level] < levelNum) return;

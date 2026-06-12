@@ -1,4 +1,4 @@
-import { lstat } from "node:fs/promises";
+import { lstat, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { readConfig, readDeploymentRegistry } from "../src/core/config.js";
 import { runCli } from "../src/cli/app.js";
@@ -16,7 +16,7 @@ describe("CLI", () => {
       });
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain("Initialized skillctl");
+      expect(result.stdout).toContain("Initialized skillsctl");
       expect(result.stdout).toContain("Repository:");
 
       const config = await readConfig(workspace.home);
@@ -81,7 +81,15 @@ describe("CLI", () => {
       });
 
       const enableResult = await runCli({
-        argv: ["enable", "frontend-design", "--agent", "claude-code", "--global", "--mode", "symlink"],
+        argv: [
+          "enable",
+          "frontend-design",
+          "--agent",
+          "claude-code",
+          "--global",
+          "--mode",
+          process.platform === "win32" ? "junction" : "symlink"
+        ],
         homeDir: workspace.home,
         cwd: workspace.project,
         platform: "darwin"
@@ -158,7 +166,7 @@ describe("CLI", () => {
     }
   });
 
-  it("returns clear errors for missing config, bad commands, and unfinished update", async () => {
+  it("updates repository skills and reports clear errors", async () => {
     const workspace = await makeTempWorkspace();
     try {
       const missingConfig = await runCli({
@@ -168,7 +176,7 @@ describe("CLI", () => {
         platform: "darwin"
       });
       expect(missingConfig.exitCode).toBe(1);
-      expect(missingConfig.stderr).toContain("Run `skillctl init` first.");
+      expect(missingConfig.stderr).toContain("Run `skillsctl init` first.");
 
       const unknown = await runCli({
         argv: ["unknown"],
@@ -185,14 +193,33 @@ describe("CLI", () => {
         cwd: workspace.project,
         platform: "darwin"
       });
-      const update = await runCli({
-        argv: ["update"],
+      const source = join(workspace.root, "source-skill");
+      await mkdir(source, { recursive: true });
+      await writeFile(join(source, "SKILL.md"), "---\nname: source-skill\ndescription: A\n---\n");
+      await runCli({
+        argv: ["import", source],
         homeDir: workspace.home,
         cwd: workspace.project,
         platform: "darwin"
       });
-      expect(update.exitCode).toBe(1);
-      expect(update.stderr).toContain("not implemented");
+      await writeFile(join(source, "SKILL.md"), "---\nname: source-skill\ndescription: B\n---\n");
+      const update = await runCli({
+        argv: ["update", "source-skill"],
+        homeDir: workspace.home,
+        cwd: workspace.project,
+        platform: "darwin"
+      });
+      expect(update.exitCode).toBe(0);
+      expect(update.stdout).toContain("source-skill: updated");
+
+      const missingSkill = await runCli({
+        argv: ["update", "missing-skill"],
+        homeDir: workspace.home,
+        cwd: workspace.project,
+        platform: "darwin"
+      });
+      expect(missingSkill.exitCode).toBe(1);
+      expect(missingSkill.stderr).toContain("Skill not found");
     } finally {
       await workspace.cleanup();
     }

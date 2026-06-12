@@ -1,12 +1,12 @@
-# skillctl TUI 交互设计草案
+# skillsctl TUI 交互设计草案
 
-skillctl 的 TUI 使用 `@clack/prompts` 做轻量交互，重点支持本地仓库管理、Agent 派发管理和系统诊断。Agent 派发管理采用“扫描当前状态 -> 复选框编辑期望状态 -> 根据前后差异生成变更 -> 确认执行”的模式，适合一次批量管理多个 skills。
+skillsctl 的 TUI 使用 `@clack/prompts` 做轻量交互，重点支持本地仓库管理、Agent 派发管理和系统诊断。Agent 派发管理采用“扫描当前状态 -> 复选框编辑期望状态 -> 根据前后差异生成变更 -> 确认执行”的模式，适合一次批量管理多个 skills。
 
 ---
 
 ## 1. 设计目标
 
-skillctl 的 TUI 不是复杂的全屏终端应用，而是一组清晰的命令行交互流程。它要帮助用户完成三件事：
+skillsctl 的 TUI 不是复杂的全屏终端应用，而是一组清晰的命令行交互流程。它要帮助用户完成三件事：
 
 * 管理本地技能仓库：导入、查看、更新、删除 skills。
 * 批量管理 Agent 派发状态：在同一个复选框列表里维护某个 Agent 当前应该启用哪些 skills。
@@ -21,7 +21,7 @@ skillctl 的 TUI 不是复杂的全屏终端应用，而是一组清晰的命令
 * 保留当前项目体验：支持把 skills 派发到当前项目，并根据 Agent 类型自动选择对应 skills 目录。
 * 兼容 `npx skills add` 心智：导入流程支持粘贴或解析 `npx skills add ...` 命令，并复用其 source、skill selection、agent、global、copy 等交互语义。
 
-实现注记：skillctl 会参考并复制或重实现本地 `vercel-labs/skills` 的关键逻辑，源码位置为 `D:\Works\Github\skills`，包括 source 解析、skill discovery、更新逻辑和 Agent path mapping。MVP 不把该项目作为运行时库直接依赖。
+实现注记：skillsctl 会参考并复制或重实现本地 `vercel-labs/skills` 的关键逻辑，源码位置为 `D:\Works\Github\skills`，包括 source 解析、skill discovery、更新逻辑和 Agent path mapping。MVP 不把该项目作为运行时库直接依赖。
 
 ---
 
@@ -32,7 +32,7 @@ skillctl 的 TUI 不是复杂的全屏终端应用，而是一组清晰的命令
 用户输入：
 
 ```bash
-skillctl
+skillsctl
 ```
 
 如果没有初始化配置，进入首次初始化流程。若已有配置，直接进入主菜单。
@@ -51,8 +51,8 @@ skillctl
 
 | 状态 | 含义 |
 | --- | --- |
-| `managed` | 由 skillctl 管理的派发 |
-| `local only` | 只存在于 Agent 目录，不在 skillctl 仓库中 |
+| `managed` | 由 skillsctl 管理的派发 |
+| `local only` | 只存在于 Agent 目录，不在 skillsctl 仓库中 |
 | `broken` | 链接损坏或目标不存在 |
 | `conflict` | 目标路径已有非受管 skill 或名称冲突 |
 | `outdated` | copy 模式派发的副本落后于仓库版本 |
@@ -73,13 +73,13 @@ skillctl
 ### 3.1 检测无配置
 
 ```bash
-欢迎使用 skillctl
+欢迎使用 skillsctl
 
 未检测到配置文件。  
-skillctl 会创建一个本地技能仓库，用来集中保存 skills。   
+skillsctl 会创建一个本地技能仓库，用来集中保存 skills。   
 该仓库不会被 Claude、Codex、Cursor 等 Agent 自动读取。
 配置目录: ~/.skillsctl
-是否现在初始化 skillctl?
+是否现在初始化 skillsctl?
 
 ● 是，开始初始化` 
 ○ 否，退出` 
@@ -180,13 +180,13 @@ skillctl 会创建一个本地技能仓库，用来集中保存 skills。
 ## 4. 主菜单
 
 ```bash
-skillctl
+skillsctl
 本地仓库: \~/.skillsctl/repository
 当前项目: D:\\Works\\Github\\my-project
 
 请选择操作类别:
 
-● 📦 仓库技能管理  
+● 📦 技能管理  
 ○ 🤖 Agent 派发管理  
 ○ 🩺 系统环境诊断  
 ○ ⚙️ 系统设置  
@@ -195,19 +195,19 @@ skillctl
 
 说明：
 
-* 仓库技能管理：管理 source of truth，也就是 `~/.skillsctl/repository`。
+* 技能管理：管理 source of truth，也就是 `~/.skillsctl/repository`。
 * Agent 派发管理：按 Agent 和作用域批量维护技能期望状态。
 * 系统环境诊断：检查链接、权限、冲突和路径问题。
 * 系统设置：修改仓库路径、默认派发方式、Agent 映射。
 
 ---
 
-## 5. 仓库技能管理流程
+## 5. 技能管理流程
 
-### 5.1 进入仓库技能管理
+### 5.1 进入技能管理
 
 ```bash
-仓库技能管理
+技能管理
 本地仓库: \~/.skillsctl/repository
 
 当前仓库中共有 18 个 skills  
@@ -341,7 +341,7 @@ vercel-labs/agent-skills
 
 ### 5.5 从 npx skills add 命令导入
 
-该流程用于兼容用户从 skills.sh 或 README 中复制的命令。skillctl 不直接执行 `npx skills add`，而是解析命令语义，并转换为「导入到本地仓库」和可选的「派发计划」。
+该流程用于兼容用户从 skills.sh 或 README 中复制的命令。skillsctl 不直接执行 `npx skills add`，而是解析命令语义，并转换为「导入到本地仓库」和可选的「派发计划」。
 
 ```bash
 请粘贴 npx skills add 命令:
@@ -367,7 +367,7 @@ agents: claude-code
 scope: global  
 mode: symlink
 
-skillctl 会先导入到本地仓库:  
+skillsctl 会先导入到本地仓库:  
 ~/.skillsctl/repository/frontend-design
 
 然后可以选择是否按命令参数继续派发。  
@@ -414,7 +414,7 @@ skillctl 会先导入到本地仓库:
 
 支持的 `npx skills add` 参数映射：
 
-| npx skills 参数 | skillctl TUI 行为 |
+| npx skills 参数 | skillsctl TUI 行为 |
 | --- | --- |
 | `<source>` | 作为导入来源解析 |
 | `--skill` / `-s` | 预选指定 skills |
@@ -566,7 +566,7 @@ Agent 派发管理
 ○ 返回 Agent 列表  
 ```  
 
-这里要保留当前项目设计：用户选择「当前项目」后，skillctl 根据 Agent 类型自动计算目标 skills 目录。
+这里要保留当前项目设计：用户选择「当前项目」后，skillsctl 根据 Agent 类型自动计算目标 skills 目录。
 
 | Agent | 当前项目 skills 目录 |
 | --- | --- |
@@ -581,18 +581,18 @@ Agent 派发管理
 提示文案：
 
 ```bash
-提示: skillctl 不会修改项目 .gitignore。
+提示: skillsctl 不会修改项目 .gitignore。
 如果你不希望项目级 skills 被提交，请自行确认 .gitignore 设置。
 ```
 
 ### 6.3 Agent skill 批量状态列表
 
-进入某个 Agent + scope 后，skillctl 先扫描目标范围，然后根据扫描结果渲染复选框列表：
+进入某个 Agent + scope 后，skillsctl 先扫描目标范围，然后根据扫描结果渲染复选框列表：
 
 * 仓库中存在、且目标中已经存在的 skill：默认已勾选。
 * 仓库中存在、但目标中不存在的 skill：默认未勾选。
 * 用户直接编辑勾选状态。
-* 按 Enter 后，skillctl 比较初始勾选状态和最终勾选状态，计算要启用或关闭的 skills。
+* 按 Enter 后，skillsctl 比较初始勾选状态和最终勾选状态，计算要启用或关闭的 skills。
 * `local only`、`broken`、`conflict` 项不进入复选框列表，单独处理。
 
 示例：Claude Code 全局。
@@ -707,7 +707,7 @@ Claude Code 全局 skills
 详情：
 
 ```bash
-old-commit-helper 只存在于 Claude Code 全局目录，不在 skillctl 仓库中。
+old-commit-helper 只存在于 Claude Code 全局目录，不在 skillsctl 仓库中。
 
 路径:  
 ~/.claude/skills/old-commit-helper
@@ -719,7 +719,7 @@ old-commit-helper 只存在于 Claude Code 全局目录，不在 skillctl 仓库
 ○ 暂不处理  
 ```
 
-MVP 默认只实现「导入到本地仓库，保留原文件」。后续版本再支持「导入并转换为 skillctl 管理」。
+MVP 默认只实现「导入到本地仓库，保留原文件」。后续版本再支持「导入并转换为 skillsctl 管理」。
 
 确认：
 
@@ -779,7 +779,7 @@ legacy-review 是一个损坏的链接。
 Agent 本地 skill:  
 ~/.claude/skills/pr-review
 
-该 Agent 本地 skill 不是由 skillctl 管理，不能自动覆盖。
+该 Agent 本地 skill 不是由 skillsctl 管理，不能自动覆盖。
 
 请选择操作:
 
@@ -1024,13 +1024,13 @@ ID: my-agent
 退出文案：
 
 ```bash
-已退出 skillctl。
+已退出 skillsctl。
 ```
 
 如果刚完成重要操作，可以给下一步提示：
 
 ```bash
-已退出 skillctl。
+已退出 skillsctl。
 
 提示: 如果 Agent 已经在运行，可能需要重启或刷新后才能看到 skills 变化。  
 ```  
@@ -1063,8 +1063,8 @@ ID: my-agent
 目标路径已存在:
 \~/.claude/skills/frontend-design
 
-该路径不是 skillctl 管理的派发。  
-为了避免误删或覆盖，skillctl 不会自动替换它。
+该路径不是 skillsctl 管理的派发。  
+为了避免误删或覆盖，skillsctl 不会自动替换它。
 
 请选择操作:
 
@@ -1120,7 +1120,7 @@ ID: my-agent
 * 默认配置目录统一为 `~/.skillsctl`。
 * MVP 不自动写入 `.gitignore`。
 * Codex 全局 skills 路径遵循官方 Codex 文档，默认值为 `~/.agents/skills`，用户可在设置中覆盖。
-* skillctl 复制或重实现 `D:\Works\Github\skills` 中的关键逻辑，不作为运行时库直接依赖。
+* skillsctl 复制或重实现 `D:\Works\Github\skills` 中的关键逻辑，不作为运行时库直接依赖。
 * MVP TUI 使用 `@clack/prompts`，保持轻量交互式 prompts。
 * 当前项目派发设计保留，并根据 Agent 类型自动选择项目内 skills 文件夹。
 * Agent 派发管理使用初始勾选状态与最终勾选状态的差异来计算变更，而不是基于显式的 on/off 标签。
@@ -1128,7 +1128,7 @@ ID: my-agent
 
 ### 12.2 剩余问题
 
-* npm 包与命令命名及发布方案是否确定为 package `skillctl`、binary `skillctl`、支持 `npx skillctl`？
+* npm 包与命令命名及发布方案是否确定为 package `skillsctl`、binary `skillsctl`、支持 `npx skillsctl`？
 * MVP 默认启用 Agents 是否最终确定为 Claude Code、Codex、Cursor、Universal `.agents`，OpenCode 仅在检测到时启用？
 * Windows auto 策略优先级是否最终确认为 `symlink -> junction -> copy`？
 * local-only skill 导入时，MVP 是否只支持 copy 到仓库、原文件保留？

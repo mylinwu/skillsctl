@@ -8,6 +8,7 @@ import {
 } from "./config.js";
 import type {
   AgentDefinition,
+  BrokenDeployment,
   Config,
   DeploymentRecord,
   DeployMode,
@@ -117,6 +118,63 @@ export async function isCopyOutdated(deployment: DeploymentRecord) {
 
 export function targetPathForSkill(targetRoot: string, skillId: string) {
   return join(targetRoot, basename(skillId));
+}
+
+export async function scanBrokenDeployments(config: Config): Promise<BrokenDeployment[]> {
+  const registry = await readDeploymentRegistry(config.deploymentsPath);
+  const broken: BrokenDeployment[] = [];
+
+  for (const deployment of registry.deployments) {
+    const entry = await lstat(deployment.targetPath).catch(() => undefined);
+
+    if (!entry) {
+      // Target path does not exist at all
+      broken.push({ deployment, reason: "target-missing", isLink: false });
+      continue;
+    }
+
+    if (entry.isSymbolicLink()) {
+      // Link exists — check whether it points to a valid target
+      const linkTarget = await readlink(deployment.targetPath).catch(() => undefined);
+      if (!linkTarget || !(await exists(linkTarget))) {
+        broken.push({ deployment, reason: "broken-link", isLink: true });
+      }
+    }
+    // For non-link entries (copy, junction on Windows reported as dir),
+    // entry existing means the deployment is intact.
+  }
+
+  return broken;
+}
+
+export async function pruneBrokenDeployments(
+  config: Config,
+  targets: BrokenDeployment[]
+): Promise<{ pruned: number; cleanedLinks: number }> {
+  if (targets.length === 0) {
+    return { pruned: 0, cleanedLinks: 0 };
+  }
+
+  const idsToRemove = new Set(targets.map((item) => item.deployment.id));
+  let cleanedLinks = 0;
+
+  // Remove broken symlink/junction files that still linger on disk
+  for (const item of targets) {
+    if (item.isLink && item.reason === "broken-link") {
+      try {
+        await rm(item.deployment.targetPath, { force: true });
+        cleanedLinks++;
+      } catch {
+        // Best-effort cleanup; ignore failures
+      }
+    }
+  }
+
+  const registry = await readDeploymentRegistry(config.deploymentsPath);
+  registry.deployments = registry.deployments.filter((item) => !idsToRemove.has(item.id));
+  await writeDeploymentRegistry(config.deploymentsPath, registry);
+
+  return { pruned: idsToRemove.size, cleanedLinks };
 }
 
 async function assertTargetIsSafeToRemove(deployment: DeploymentRecord) {

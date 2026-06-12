@@ -69,7 +69,7 @@ export async function scanAgentScope(
         status: "conflict",
         repositoryPath: skill.localPath,
         targetPath,
-        message: "Target exists but is not managed by skillctl."
+        message: "Target exists but is not managed by skillsctl."
       });
     } else {
       items.push({

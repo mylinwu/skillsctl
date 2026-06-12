@@ -17,7 +17,7 @@ export class GitCloneError extends Error {
 }
 
 export async function cloneRepo(url: string, ref?: string) {
-  const tempDir = await mkdtemp(join(tmpdir(), "skillctl-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "skillsctl-"));
   const args = ["clone", "--depth", "1"];
   if (ref) {
     args.push("--branch", ref);

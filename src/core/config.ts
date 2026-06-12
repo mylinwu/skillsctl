@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, posix, win32 } from "node:path";
 import { z } from "zod";
 import { getBuiltInAgents } from "./agent-registry.js";
 import type { Config, DeployMode, DeploymentRegistry } from "./types.js";
@@ -59,15 +59,16 @@ export interface ConfigPathsOptions {
 }
 
 export function getDefaultConfig(options: ConfigPathsOptions): Config {
-  const configDir = join(options.homeDir, ".skillsctl");
+  const pathApi = (options.platform ?? process.platform) === "win32" ? win32 : posix;
+  const configDir = pathApi.join(options.homeDir, ".skillsctl");
   const defaultDeployMode: DeployMode =
     (options.platform ?? process.platform) === "win32" ? "auto" : "symlink";
 
   return {
     version: 1,
     configDir,
-    repositoryPath: join(configDir, "repository"),
-    deploymentsPath: join(configDir, "deployments.json"),
+    repositoryPath: pathApi.join(configDir, "repository"),
+    deploymentsPath: pathApi.join(configDir, "deployments.json"),
     defaultDeployMode,
     logging: {
       level: "error",

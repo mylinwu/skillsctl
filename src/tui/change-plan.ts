@@ -7,7 +7,7 @@ export interface AgentTogglePlan {
 
 export function planAgentToggleChanges(items: ScanItem[], selectedSkillIds: string[]): AgentTogglePlan {
   const selected = new Set(selectedSkillIds);
-  const manageable = items.filter((item) => ["managed", "outdated", "not-deployed"].includes(item.status));
+  const manageable = items.filter((item) => ["managed", "outdated", "not-deployed", "broken"].includes(item.status));
   const initiallyEnabled = new Set(
     manageable
       .filter((item) => item.status === "managed" || item.status === "outdated")

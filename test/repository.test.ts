@@ -1,7 +1,18 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getDefaultConfig, writeDeploymentRegistry } from "../src/core/config.js";
-import { deleteRepositorySkill, importFromSource, importLocalSkills, listRepositorySkills } from "../src/core/repository.js";
+import {
+  checkRepositorySkillUpdate,
+  checkRepositorySkillUpdates,
+  deleteRepositorySkill,
+  importFromSource,
+  importLocalSkills,
+  listRepositorySkillViews,
+  listRepositorySkills,
+  updateRepositorySkill
+} from "../src/core/repository.js";
+import { enableSkill } from "../src/core/deployment.js";
+import { getAgent } from "../src/core/agent-registry.js";
 import { discoverSkillDirectories, isSubpathSafe, parseSkillDirectory } from "../src/core/skill-parser.js";
 import { parseNpxSkillsAdd, parseSource, sanitizeSubpath } from "../src/core/source-resolver.js";
 import { makeTempWorkspace } from "./helpers/tmpdir.js";
@@ -54,6 +65,7 @@ describe("skill parser and repository", () => {
       const imported = await importLocalSkills(config, source);
       expect(imported).toHaveLength(1);
       expect(imported[0]?.source?.type).toBe("local");
+      expect(imported[0]?.source?.sourceHash).toMatch(/^[a-f0-9]{64}$/);
 
       const listed = await listRepositorySkills(config);
       expect(listed.map((skill) => skill.id)).toEqual(["frontend-design"]);
@@ -111,6 +123,117 @@ describe("skill parser and repository", () => {
       const listed = await listRepositorySkills(config);
       expect(listed[0]?.source?.type).toBe("local");
       expect(listed[0]?.source?.url).toBe(sourceRoot);
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
+  it("builds repository skill views with deployment summaries and filtering", async () => {
+    const workspace = await makeTempWorkspace();
+    try {
+      const config = getDefaultConfig({ homeDir: workspace.home, platform: "darwin" });
+      const source = join(import.meta.dirname, "fixtures", "skills", "frontend-design");
+      const [skill] = await importLocalSkills(config, source);
+      const agent = getAgent(config, "claude-code");
+      expect(agent).toBeTruthy();
+
+      await enableSkill(config, skill!, agent!, { kind: "global" }, {
+        homeDir: workspace.home,
+        mode: "copy",
+        platform: process.platform === "win32" ? "win32" : "darwin"
+      });
+      await writeFile(join(skill!.localPath, "extra.txt"), "changed");
+
+      const views = await listRepositorySkillViews(config, { keyword: "polished" });
+      expect(views).toHaveLength(1);
+      expect(views[0]?.summary).toContain("outdated copy:");
+      expect(views[0]?.deployments[0]?.deployment.agentId).toBe("claude-code");
+      expect(views[0]?.deployments[0]?.status).toBe("outdated");
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
+  it("updates repository skills from local source and detects local changes", async () => {
+    const workspace = await makeTempWorkspace();
+    try {
+      const config = getDefaultConfig({ homeDir: workspace.home, platform: "darwin" });
+      const source = join(workspace.root, "source-skill");
+      await mkdir(source, { recursive: true });
+      await writeFile(
+        join(source, "SKILL.md"),
+        "---\nname: source-skill\ndescription: First version\n---\n\nBody A\n"
+      );
+
+      const [imported] = await importLocalSkills(config, source);
+      expect(imported?.source?.sourceHash).toBeTruthy();
+
+      await writeFile(
+        join(source, "SKILL.md"),
+        "---\nname: source-skill\ndescription: Updated version\n---\n\nBody B\n"
+      );
+
+      const updated = await updateRepositorySkill(config, "source-skill");
+      expect(updated.status).toBe("updated");
+
+      const listed = await listRepositorySkills(config);
+      expect(listed[0]?.description).toBe("Updated version");
+
+      const latest = await updateRepositorySkill(config, "source-skill");
+      expect(latest.status).toBe("already-latest");
+
+      await writeFile(join(listed[0]!.localPath, "LOCAL.md"), "local changes");
+      const checked = await checkRepositorySkillUpdate(config, "source-skill");
+      expect(checked.status).toBe("local-changes");
+
+      const skipped = await updateRepositorySkill(config, "source-skill");
+      expect(skipped.status).toBe("skipped-local-changes");
+
+      const forced = await updateRepositorySkill(config, "source-skill", { force: true });
+      expect(forced.status).toBe("updated");
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
+  it("marks upstream-missing when the source skill disappears", async () => {
+    const workspace = await makeTempWorkspace();
+    try {
+      const config = getDefaultConfig({ homeDir: workspace.home, platform: "darwin" });
+      const source = join(workspace.root, "missing-source");
+      await mkdir(source, { recursive: true });
+      await writeFile(join(source, "SKILL.md"), "---\nname: missing-source\n---\n");
+
+      await importLocalSkills(config, source);
+      await writeFile(join(source, "README.md"), "no skill anymore");
+      await writeFile(join(source, "SKILL.md.bak"), "moved");
+
+      await rm(join(source, "SKILL.md"), { force: true });
+
+      const result = await updateRepositorySkill(config, "missing-source");
+      expect(result.status).toBe("missing-upstream-skill");
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
+  it("checks repository updates in batch and finds update-available skills", async () => {
+    const workspace = await makeTempWorkspace();
+    try {
+      const config = getDefaultConfig({ homeDir: workspace.home, platform: "darwin" });
+      const sourceA = join(workspace.root, "skill-a");
+      const sourceB = join(workspace.root, "skill-b");
+      await mkdir(sourceA, { recursive: true });
+      await mkdir(sourceB, { recursive: true });
+      await writeFile(join(sourceA, "SKILL.md"), "---\nname: skill-a\ndescription: A\n---\n");
+      await writeFile(join(sourceB, "SKILL.md"), "---\nname: skill-b\ndescription: B\n---\n");
+      await importLocalSkills(config, sourceA);
+      await importLocalSkills(config, sourceB);
+      await writeFile(join(sourceA, "SKILL.md"), "---\nname: skill-a\ndescription: A2\n---\n");
+
+      const checked = await checkRepositorySkillUpdates(config);
+      expect(checked.find((item) => item.skillId === "skill-a")?.status).toBe("update-available");
+      expect(checked.find((item) => item.skillId === "skill-b")?.status).toBe("already-latest");
     } finally {
       await workspace.cleanup();
     }
