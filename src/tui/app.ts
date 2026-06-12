@@ -16,7 +16,7 @@ import type { Config, DeployMode, SkillScope } from "../core/types.js";
 import { getLogger } from "../platform/logger.js";
 import { displayPath, resolveUserPath } from "../platform/path.js";
 import { planAgentToggleChanges } from "./change-plan.js";
-import { CancellationError, prompts } from "./prompt-adapter.js";
+import { BACK, isBack, prompts } from "./prompt-adapter.js";
 
 export interface TuiOptions {
   homeDir?: string;
@@ -35,7 +35,9 @@ export async function runTui(options: TuiOptions = {}) {
 
   let config: Config;
   if (!(await configExists(homeDir))) {
-    config = await initializeFlow({ homeDir, cwd, platform });
+    const result = await initializeFlow({ homeDir, cwd, platform });
+    if (isBack(result)) return;
+    config = result;
   } else {
     config = await readConfig(homeDir);
   }
@@ -53,6 +55,8 @@ export async function runTui(options: TuiOptions = {}) {
       ]
     );
 
+    if (isBack(action)) break;
+
     switch (action) {
       case "repository":
         await repositoryFlow(config, { homeDir, cwd });
@@ -63,9 +67,11 @@ export async function runTui(options: TuiOptions = {}) {
       case "doctor":
         await doctorFlow(config, { homeDir });
         break;
-      case "settings":
-        config = await settingsFlow(config, { homeDir });
+      case "settings": {
+        const result = await settingsFlow(config, { homeDir });
+        if (!isBack(result)) config = result;
         break;
+      }
       case "exit":
         exit = true;
         break;
@@ -80,9 +86,9 @@ async function initializeFlow(options: Required<TuiOptions>) {
     "未检测到配置文件。skillctl 会创建一个不会被 Agent 自动读取的本地技能仓库。是否现在初始化？",
     true
   );
-  if (!shouldInit) {
+  if (isBack(shouldInit) || !shouldInit) {
     prompts.outro("已退出 skillctl。");
-    throw new CancellationError();
+    return BACK;
   }
 
   const defaultRepositoryPath = join(options.homeDir, ".skillsctl", "repository");
@@ -91,6 +97,8 @@ async function initializeFlow(options: Required<TuiOptions>) {
     defaultRepositoryPath,
     defaultRepositoryPath
   );
+  if (isBack(repositoryInput)) return BACK;
+
   const deployMode = await prompts.select<DeployMode>(
     "请选择默认派发方式",
     [
@@ -100,6 +108,8 @@ async function initializeFlow(options: Required<TuiOptions>) {
     ],
     options.platform === "win32" ? "auto" : "symlink"
   );
+  if (isBack(deployMode)) return BACK;
+
   const enabledAgentIds = await prompts.multiselect<string>(
     "请选择要启用的 Agents",
     [
@@ -113,15 +123,16 @@ async function initializeFlow(options: Required<TuiOptions>) {
     true,
     ["universal", "claude-code", "codex"]
   );
+  if (isBack(enabledAgentIds)) return BACK;
 
   const spin = prompts.spinner();
   spin.start("正在初始化 skillctl...");
   const config = await initializeConfig({
     homeDir: options.homeDir,
     platform: options.platform,
-    repositoryPath: resolveUserPath(repositoryInput, options),
-    defaultDeployMode: deployMode,
-    enabledAgentIds
+    repositoryPath: resolveUserPath(repositoryInput as string, options),
+    defaultDeployMode: deployMode as DeployMode,
+    enabledAgentIds: enabledAgentIds as string[]
   });
   spin.stop("初始化完成");
 
@@ -149,7 +160,7 @@ async function repositoryFlow(config: Config, options: { homeDir: string; cwd: s
     ]
   );
 
-  if (action === "back") {
+  if (isBack(action) || action === "back") {
     return;
   }
 
@@ -168,7 +179,9 @@ async function repositoryFlow(config: Config, options: { homeDir: string; cwd: s
 
   if (action === "import-local") {
     const sourcePath = await prompts.text("请输入 skill 来源", "vercel-labs/skills -- 或 ./my-skill");
+    if (isBack(sourcePath)) return;
     const skillFilter = await prompts.text("可选：指定 skill 名称或目录名，直接 Enter 导入全部发现的 skills", "");
+    if (isBack(skillFilter)) return;
     const spin = prompts.spinner();
     spin.start("正在导入...");
     const imported = await importFromSource(config, sourcePath, {
@@ -185,6 +198,7 @@ async function repositoryFlow(config: Config, options: { homeDir: string; cwd: s
       "请粘贴 npx skills add 命令",
       "npx skills add vercel-labs/agent-skills --skill frontend-design -a claude-code -g"
     );
+    if (isBack(command)) return;
     const parsed = parseNpxSkillsAdd(command);
     prompts.note(
       [
@@ -196,7 +210,9 @@ async function repositoryFlow(config: Config, options: { homeDir: string; cwd: s
       ].join("\n"),
       "解析结果"
     );
-    if (parsed.source && (await prompts.confirm("是否按解析结果导入到本地仓库？", true))) {
+    const shouldImport = await prompts.confirm("是否按解析结果导入到本地仓库？", true);
+    if (isBack(shouldImport)) return;
+    if (parsed.source && shouldImport) {
       const spin = prompts.spinner();
       spin.start("正在导入...");
       const imported = await importFromSource(config, parsed.source, {
@@ -218,7 +234,9 @@ async function repositoryFlow(config: Config, options: { homeDir: string; cwd: s
     "请选择要删除的 skill",
     skills.map((skill) => ({ value: skill.id, label: skill.name }))
   );
+  if (isBack(skillId)) return;
   const confirmed = await prompts.confirm("确认删除？已派发的 skill 会被阻止删除。", false);
+  if (isBack(confirmed)) return;
   if (confirmed) {
     await deleteRepositorySkill(config, skillId);
     prompts.note(skillId, "已删除");
@@ -243,6 +261,8 @@ async function agentsFlow(
       hint: displayPath(resolveAgentTargetPath(agent, { kind: "global" }, options), options)
     }))
   );
+  if (isBack(agentId)) return;
+
   const agent = getAgent(config, agentId)!;
   const scopeChoice = await prompts.select<"global" | "project" | "back">(
     "请选择管理范围",
@@ -258,7 +278,7 @@ async function agentsFlow(
       { value: "back", label: "返回 Agent 列表" }
     ]
   );
-  if (scopeChoice === "back") {
+  if (isBack(scopeChoice) || scopeChoice === "back") {
     return;
   }
 
@@ -284,6 +304,7 @@ async function agentsFlow(
     false,
     initiallyEnabled
   );
+  if (isBack(selected)) return;
 
   const { toEnable, toDisable } = planAgentToggleChanges(manageable, selected);
 
@@ -300,9 +321,9 @@ async function agentsFlow(
     "变更预览"
   );
 
-  if (!(await prompts.confirm("是否继续应用这些变更？", true))) {
-    return;
-  }
+  const shouldApply = await prompts.confirm("是否继续应用这些变更？", true);
+  if (isBack(shouldApply)) return;
+  if (!shouldApply) return;
 
   const repositorySkills = await listRepositorySkills(config);
   let enabled = 0;
@@ -377,7 +398,7 @@ async function settingsFlow(config: Config, options: { homeDir: string }) {
     ]
   );
 
-  if (action === "back") {
+  if (isBack(action) || action === "back") {
     return config;
   }
   if (action === "show") {
@@ -394,6 +415,7 @@ async function settingsFlow(config: Config, options: { homeDir: string }) {
       ],
       config.defaultDeployMode
     );
+    if (isBack(defaultDeployMode)) return config;
     const next = { ...config, defaultDeployMode };
     await writeConfig(next);
     return next;
@@ -407,6 +429,7 @@ async function settingsFlow(config: Config, options: { homeDir: string }) {
         hint: agent.enabled ? "enabled" : "disabled"
       }))
     );
+    if (isBack(agentId)) return config;
     const next = {
       ...config,
       agents: config.agents.map((agent) =>
@@ -418,14 +441,18 @@ async function settingsFlow(config: Config, options: { homeDir: string }) {
   }
 
   const id = await prompts.text("请输入 Agent ID", "my-agent");
+  if (isBack(id)) return config;
   const displayName = await prompts.text("请输入显示名称", "My Agent");
+  if (isBack(displayName)) return config;
   const globalPath = await prompts.text("请输入全局 skills 路径", "~/.my-agent/skills");
+  if (isBack(globalPath)) return config;
   const projectPath = await prompts.text("请输入项目 skills 相对路径", ".my-agent/skills");
+  if (isBack(projectPath)) return config;
   const next = upsertAgent(config, {
-    id,
-    displayName,
-    globalPath,
-    projectPath,
+    id: id as string,
+    displayName: displayName as string,
+    globalPath: globalPath as string,
+    projectPath: projectPath as string,
     defaultDeployMode: "inherit",
     enabled: true
   });
